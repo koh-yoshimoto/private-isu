@@ -3,19 +3,21 @@ import { check } from "k6"
 import { parseHTML } from "k6/html";
 
 import { url } from "./config.js"
+import { getAccount } from "./accounts.js"
 
 
 export default function () {
+  const account = getAccount();
   const login_res = http.post(url("/login"),{
-    account_name: 'test',
-    password: 'testtest',
+    account_name: account.account_name,
+    password: account.password,
   });
 
   check(login_res, {
     "is status 200": (r) => r.status === 200,
   });
 
-  const res = http.get(url("/@test"));
+  const res = http.get(url(`/@${account.account_name}`));
 
   const doc = parseHTML(res.body);
 
