@@ -2,6 +2,7 @@ package main
 
 import (
 	crand "crypto/rand"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -27,6 +28,7 @@ import (
 var (
 	db    *sqlx.DB
 	store *gsm.MemcacheStore
+	mc    *memcache.Client
 )
 
 const (
@@ -220,6 +222,34 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 	}
 
 	return posts, nil
+}
+
+func getUser(id int) User {
+	user := User{}
+	it, err := mc.Get(fmt.Sprintf("user_id:%d", id))
+	if err == nil {
+		err := json.Unmarshal(it.Value, &user)
+		if err != nil {
+			return user
+		}
+	}
+
+	err = db.Get(&user, "SELECT * FROM `users` WHERE `id` = ?", id)
+	if err != nil {
+		log.Fatal(err)
+	}
+	j, err := json.Marshal(user)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	mc.Set(&memcache.Item{
+		Key:        fmt.Sprint("user_id:%d", id),
+		Value:      j,
+		Expiration: 3600,
+	})
+
+	return user
 }
 
 func imageURL(p Post) string {
@@ -828,6 +858,12 @@ func main() {
 		log.Fatalf("Failed to connect to DB: %s.", err.Error())
 	}
 	defer db.Close()
+
+	address := os.Getenv("ISUCONP_MEMCACHED_ADDRESS")
+	if address == "" {
+		address = "localhost:11211"
+	}
+	mc = memcache.New(address)
 
 	r := chi.NewRouter()
 
